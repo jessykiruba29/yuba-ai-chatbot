@@ -1,19 +1,20 @@
 {
   "name": "yuba-widget",
   "private": false,
-  "version": "1.0.0",
+  "version": "1.0.2",
+  "description": "A floating chatbot widget powered by FastAPI and Gemini",
   "type": "module",
   "main": "dist/yuba-widget.umd.js",
   "module": "dist/yuba-widget.es.js",
   "files": [
     "dist",
-    "src/components/widget.css"
+    "dist/yuba-widget.css"
   ],
-  "license":"MIT",
-  "style": "src/components/widget.css",
+  "license": "MIT",
+  "style": "dist/yuba-widget.css",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && copy src\\components\\widget.css dist\\yuba-widget.css",
     "lint": "eslint .",
     "preview": "vite preview"
   },

@@ -79,7 +79,10 @@ const handleSend = async () => {
         const response = await axios.post(`${import.meta.env.VITE_BACKEND}/chat`, {
             message: message,
             config_url: configuration,
-        });
+        },
+    {
+  withCredentials: true 
+});
 
         setHistory(prev => prev.filter(msg => !msg.temp)); 
 
@@ -93,7 +96,10 @@ const handleSend = async () => {
                 const formattingResponse = await axios.post(`${import.meta.env.VITE_BACKEND}/format`, {
                     raw_data: result,
                     org_msg: message,
-                });
+                },
+            {
+  withCredentials: true 
+});
 
                 const formatted = formattingResponse.data.response || formattingResponse.data;
 
@@ -170,21 +176,21 @@ if (response.data?.callback) {
                 <div ref={chatEndRef}/>
             </div>
             <div className="input-wrapper">
-  <input
-    type="text"
-    value={message}
-    onChange={handleChange}
-    placeholder="Type your message..."
-    onKeyDown={handleKeyPress}
-  />
-
-  <button
-    onClick={startListening}
-    className={`mic-inside ${isListening ? 'listening' : ''}`}
-    aria-label={isListening ? "Listening..." : "Start voice input"}
-  >
-    <FiMic />
-  </button>
+  <div className="input-with-mic">
+    <input
+      type="text"
+      value={message}
+      onChange={handleChange}
+      placeholder="Type your message..."
+      onKeyDown={handleKeyPress}
+    />
+    <button
+      onClick={startListening}
+      className={`mic-inside ${isListening ? 'listening' : ''}`}
+    >
+      <FiMic />
+    </button>
+  </div>
 
   <button onClick={handleSend} className="bt">Send</button>
 </div>

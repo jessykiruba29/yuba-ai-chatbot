@@ -59,11 +59,17 @@
   border-top: 1px solid #E1E4E8;
   display: flex;
   gap: 10px;
+  align-items: center;
 }
 
-.input-wrapper input {
+.input-with-mic {
+  position: relative;
   flex: 1;
-  padding: 12px 48px 12px 12px; /* right padding for mic */
+}
+
+.input-with-mic input {
+  width: 80%;
+  padding: 12px 40px 12px 12px; /* Space for mic on right */
   border-radius: 18px;
   border: 1px solid #ccc;
   font-size: 16px;
@@ -72,14 +78,16 @@
 
 .mic-inside {
   position: absolute;
-  right: 110px;
-  bottom:22px;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
   background: transparent;
   border: none;
   cursor: pointer;
   font-size: 20px;
   color: #555;
   transition: color 0.2s ease;
+  z-index: 2;
 }
 
 .mic-inside:hover {
