@@ -10,9 +10,8 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 import os
 from datetime import datetime
-
+from sentence_transformers import util
 from sentence_transformers import SentenceTransformer
-import faiss
 import numpy as np
 
 #fastapi
@@ -68,11 +67,10 @@ async def prepare_rag_data(url: str):
         words = full_text.split()
         chunks = [' '.join(words[i:i+50]) for i in range(0, len(words), 50)]
 
-        embeddings = embedding_model.encode(chunks)
-        index = faiss.IndexFlatL2(embeddings[0].shape[0])
-        index.add(np.array(embeddings))
+        embeddings = embedding_model.encode(chunks,convert_to_tensor=True)
+        rag_cache[url]=(embeddings,chunks)
+        
 
-        rag_cache[url] = (index, chunks)
     except Exception as e:
         logger.error(f"Failed to prepare RAG for {url}: {e}")
         rag_cache[url] = (None, [])
@@ -96,13 +94,15 @@ Reply only with "yes" or "no".
 def retrieve_relevant_chunks(url: str, query: str, top_k: int = 1):
     if url not in rag_cache:
         return []
-    index, chunks = rag_cache[url]
-    if not index or not chunks:
+    embeddings, chunks = rag_cache[url]
+    if not embeddings or not chunks:
         return []
 
-    query_embed = embedding_model.encode([query])
-    distances, indices = index.search(np.array(query_embed), top_k)
-    return [chunks[i] for i in indices[0] if i < len(chunks)]
+    query_embed = embedding_model.encode(query,convert_to_tensor=True)
+    cosine_scores=util.cos_sim(query_embed,embeddings)[0]
+    top_results=cosine_scores.topk(k=top_k)
+
+    return [chunks[i] for i in top_results.indices]
 
 #AI
 class GeminiAI:
