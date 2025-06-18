@@ -4,3 +4,8 @@ google-generativeai
 httpx
 pydantic
 dotenv
+beautifulsoup4
+lxml 
+sentence-transformers
+faiss-cpu
+numpy

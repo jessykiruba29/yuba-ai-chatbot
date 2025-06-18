@@ -4,10 +4,13 @@
   "version": "1.0.0",
   "type": "module",
   "main": "dist/yuba-widget.umd.js",
-"module": "dist/yuba-widget.es.js",
-"files": ["dist","src/components/widget.css"],
-"style":"src/components/widget.css",
-  
+  "module": "dist/yuba-widget.es.js",
+  "files": [
+    "dist",
+    "src/components/widget.css"
+  ],
+  "license":"MIT",
+  "style": "src/components/widget.css",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -19,8 +22,8 @@
     "react-dom": "^18.0.0 || ^19.0.0"
   },
   "dependencies": {
-    "axios": "^1.9.0"
-    
+    "axios": "^1.9.0",
+    "react-icons": "^5.5.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.25.0",

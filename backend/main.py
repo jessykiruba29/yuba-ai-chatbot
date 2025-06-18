@@ -6,18 +6,17 @@ import httpx
 import json
 import logging
 from typing import Optional
-import re
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 import os
 from datetime import datetime
-from urllib.parse import urlparse, urljoin
-from bs4 import BeautifulSoup
 
+from sentence_transformers import SentenceTransformer
+import faiss
+import numpy as np
+
+#fastapi
 app = FastAPI()
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -26,35 +25,88 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+#logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
 load_dotenv()
 genai_api_key = os.getenv("GENAI_API_KEY")
 genai.configure(api_key=genai_api_key)
 model = genai.GenerativeModel("gemini-1.5-flash")
 
+#BaseModels
 class ConfigURL(BaseModel):
     configuration: str
     userEmail: Optional[str] = None
-
 
 class MessageData(BaseModel):
     config_url: ConfigURL
     message: str
 
-async def extract_text_from_url(url: str) -> str:
+class FormatReq(BaseModel):
+    raw_data: dict | list | str
+    org_msg: str
+
+#RAG
+embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+rag_cache = {}  # key: url, value: (faiss_index, chunk_texts)
+
+async def prepare_rag_data(url: str):
+    if url in rag_cache:
+        return  # already cached
+
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(url, timeout=10)
-        soup = BeautifulSoup(response.text, "html.parser")
 
+        soup = BeautifulSoup(response.text, "html.parser")
         for tag in soup(["script", "style", "noscript"]):
             tag.decompose()
 
-        text = soup.get_text(separator="\n", strip=True)
-        return text[:4000]  # Limit for safety
-    except Exception as e:
-        return f"Unable to read site content: {e}"
+        full_text = soup.get_text(separator=" ", strip=True)
+        words = full_text.split()
+        chunks = [' '.join(words[i:i+50]) for i in range(0, len(words), 50)]
 
+        embeddings = embedding_model.encode(chunks)
+        index = faiss.IndexFlatL2(embeddings[0].shape[0])
+        index.add(np.array(embeddings))
+
+        rag_cache[url] = (index, chunks)
+    except Exception as e:
+        logger.error(f"Failed to prepare RAG for {url}: {e}")
+        rag_cache[url] = (None, [])
+
+#to check if user wants info about site
+async def is_site_related(message: str) -> bool:
+    prompt = f"""
+You're a helper AI. The user typed: "{message}"
+Does this message refer to information that would be on a company's website?
+Reply only with "yes" or "no".
+"""
+    try:
+        response = await model.generate_content_async(prompt)
+        reply = response.text.strip().lower()
+        return "yes" in reply
+    except Exception as e:
+        logger.warning(f"Site-related check failed: {e}")
+        return False
+
+#to retrieve top matching chunk from the site info
+def retrieve_relevant_chunks(url: str, query: str, top_k: int = 1):
+    if url not in rag_cache:
+        return []
+    index, chunks = rag_cache[url]
+    if not index or not chunks:
+        return []
+
+    query_embed = embedding_model.encode([query])
+    distances, indices = index.search(np.array(query_embed), top_k)
+    return [chunks[i] for i in indices[0] if i < len(chunks)]
+
+#AI
 class GeminiAI:
+
     async def generate_content(self, prompt: str) -> str:
         try:
             response = await model.generate_content_async(prompt)
@@ -70,33 +122,37 @@ class GeminiAI:
 
     async def extract_intent_and_payload(self, user_message: str, config_data: dict, email: str = None) -> str:
         today = datetime.now().strftime("%Y-%m-%d")
-        site_info = "" #empty initially
+        base_url = config_data.get("base_url", "")
+        site_info = ""
 
-        base_url = config_data.get("base_url")
-        if base_url:
-            site_info = await extract_text_from_url(base_url)
+        is_site_query = await is_site_related(user_message)
+        if base_url and is_site_query:
+            await prepare_rag_data(base_url)
+            chunks = retrieve_relevant_chunks(base_url, user_message)
+            site_info = "\n".join(chunks)
+            logger.info(f"Retrieved {len(chunks)} relevant chunks from {base_url}")
+            logger.info(f"chunks are: {chunks}")
+
         prompt = f"""
-You are Yuba, a helpful and smart assistant.
-if the user chats casually, you must also chat in a fun way.
-keep the convo short.
-You help users interact with their website by calling the appropriate API endpoints.
-And if user says 'today' or 'tomorrow' or 'next monday', you have to correctly format the date in ISO FORMAT (yyyy-mm-dd).
-use the reference for today , it is {today} , for tomorrow it is the day after {today}
-Each endpoint has a description, action, method, and payload template.
-{f"\nHere’s some content from the website:\n{site_info}" if site_info else ""}
+You are Yuba, which stands for Your Ultimate Backend Agent, a helpful and smart assistant.
+if the user chats casually, you must also chat in a fun way. keep the convo short.
 
-Match the user's intent with the correct endpoint and return:
+You help users interact with their website by calling the appropriate API endpoints.
+If the user says 'today', 'tomorrow', or 'next Monday', convert to ISO date format.
+Today is {today}.
+
+If the user asks about the website or any info from it, answer from the below relevant content only:
+{site_info if site_info else "(No content found)"}
+
+Match user intent with endpoint and return JSON like:
 {{
   "action": "<action from config>",
   "payload": {{ ... }}
 }}
 
-✅ IMPORTANT:
-If no endpoint matches, do NOT reply casually as plain text.
-ALWAYS return your reply inside a JSON object like this:
-{{
-  "response": "friendly message here"
-}}
+If no match, return a friendly message like:
+{{ "response": "Sorry, I couldn't find anything related." }}
+
 CONFIG:
 {json.dumps(config_data.get("endpoints", []), indent=2)}
 
@@ -105,6 +161,8 @@ USER EMAIL: "{email if email else 'Not provided'}"
 """
         return await self.generate_content(prompt)
 
+
+# ---- Main Chat Handler ----
 class AIChatBot:
     def __init__(self):
         self.ai = GeminiAI()
@@ -116,27 +174,19 @@ class AIChatBot:
                 config_data = config_response.json()
 
             logger.info("Loaded config endpoints.")
-
             ai_response = await self.ai.extract_intent_and_payload(message, config_data, email)
             logger.info(f"Raw AI response: {ai_response}")
 
             try:
                 response_data = json.loads(ai_response)
             except json.JSONDecodeError:
-            # Gemini just replied casually, not JSON
-                return { "response": ai_response }
+                return {"response": ai_response}
 
             if "response" in response_data:
-                friendly = response_data["response"]
-                base_url = config_data.get("base_url")
-                if base_url:
-                    page_summary = await extract_text_from_url(base_url)
-                    friendly += f"\n\n🔍 I also found this info from the site:\n{page_summary}"
-                return {"response": friendly}
+                return {"response": response_data["response"]}
 
             matched_action = response_data.get("action")
             user_payload = response_data.get("payload", {})
-
             matched_endpoint = next((ep for ep in config_data.get("endpoints", []) if ep.get("action") == matched_action), None)
 
             if not matched_endpoint:
@@ -153,6 +203,7 @@ class AIChatBot:
             logger.error(f"Error in handle_message: {str(e)}")
             return {"response": "Something went wrong while processing your request."}
 
+# ---- FastAPI Routes ----
 chatbot = AIChatBot()
 
 @app.post("/chat")
@@ -164,15 +215,13 @@ async def chat_with_bot(data: MessageData):
         data.config_url.userEmail
     )
 
-class FormatReq(BaseModel):
-    raw_data:dict | list | str
-    org_msg:str
-
 @app.post("/format")
 async def format_response(data: FormatReq):
-    prompt = f"""You're a helpful assistant.i can get info for something that i own or something that other people have shared. so DONT REPLY WITH 'your'.You are a smart chatbot. The user asked: "{data.org_msg}"
-    and the backend gave this raw response {data.raw_data}. Please format it clearly using commas, and reply in a user friendly way with whatever you format(use comma "," dont use astericks "*" ) and dont show email in reply"
-    """
-    response =model.generate_content(prompt)
-    return {"response": response.text}
+    prompt = f"""You're a helpful assistant. Don't say 'your' if data is shared or public.
+User asked: "{data.org_msg}"
+Backend returned: {data.raw_data}
 
+Format this clearly using commas, DON'T use *, or emails in response.
+"""
+    response = model.generate_content(prompt)
+    return {"response": response.text}

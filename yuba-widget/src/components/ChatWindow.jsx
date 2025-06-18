@@ -1,6 +1,7 @@
 import { useEffect, useState,useRef} from "react";
 import './widget.css';
 import axios from 'axios';
+import { FiMic } from "react-icons/fi";
 
 const ChatWindow = ({ closeChat,userEmail,configuration }) => {
     const [message, setMessage] = useState('');
@@ -75,21 +76,21 @@ const handleSend = async () => {
             config_url: configuration,
         });
 
-        const response = await axios.post('http://localhost:8000/chat', {
+        const response = await axios.post(`${import.meta.env.VITE_BACKEND}/chat`, {
             message: message,
             config_url: configuration,
         });
 
-        setHistory(prev => prev.filter(msg => !msg.temp)); // remove "Typing..."
+        setHistory(prev => prev.filter(msg => !msg.temp)); 
 
-        // ✅ CASE 1: Gemini matched an action and callback exists
+        
         if (response.data?.callback && window.chatbotCallback) {
             const { action, payload } = response.data.callback;
             try {
                 const result = await window.chatbotCallback(action, payload);
 
-                // 🧠 Send raw result to Gemini for intelligent formatting
-                const formattingResponse = await axios.post('http://localhost:8000/format', {
+                
+                const formattingResponse = await axios.post(`${import.meta.env.VITE_BACKEND}/format`, {
                     raw_data: result,
                     org_msg: message,
                 });
@@ -112,13 +113,20 @@ const handleSend = async () => {
             }
         }
 
-        // ✅ CASE 2: Just a normal Gemini response (fallback or friendly)
-        const raw = response.data.response || response.data;
-        const botText = typeof raw === "string"
-            ? raw.trim()
-            : typeof raw === "object"
-                ? JSON.stringify(raw, null, 2)
-                : String(raw);
+        
+       
+let botText = '';
+
+if (response.data?.callback) {
+  
+} else if (typeof response.data === 'object' && 'response' in response.data) {
+  
+  botText = response.data.response;
+} else if (typeof response.data === 'string') {
+  botText = response.data.trim();
+} else {
+  botText = JSON.stringify(response.data, null, 2);
+}
 
         setHistory(prev => [...prev, { text: botText, sender: 'bot' }]);
 
@@ -161,17 +169,25 @@ const handleSend = async () => {
                 ))}
                 <div ref={chatEndRef}/>
             </div>
-            <div className="input_area">
-                <input 
-                    type="text" 
-                    value={message} 
-                    onChange={handleChange}
-                    placeholder="Type your message..."
-                    onKeyDown={handleKeyPress}
-                />
-                <button onClick={handleSend}>Send</button>
-                <button onClick={startListening}>🎙️</button>
-            </div>
+            <div className="input-wrapper">
+  <input
+    type="text"
+    value={message}
+    onChange={handleChange}
+    placeholder="Type your message..."
+    onKeyDown={handleKeyPress}
+  />
+
+  <button
+    onClick={startListening}
+    className={`mic-inside ${isListening ? 'listening' : ''}`}
+    aria-label={isListening ? "Listening..." : "Start voice input"}
+  >
+    <FiMic />
+  </button>
+
+  <button onClick={handleSend} className="bt">Send</button>
+</div>
         </div>
     );
 }
