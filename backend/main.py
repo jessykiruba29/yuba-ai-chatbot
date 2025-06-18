@@ -10,11 +10,10 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 import os
 from datetime import datetime
-from sentence_transformers import util
-from sentence_transformers import SentenceTransformer
-import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
-#fastapi
+
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -24,7 +23,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-#logging
+# Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -34,7 +33,7 @@ genai_api_key = os.getenv("GENAI_API_KEY")
 genai.configure(api_key=genai_api_key)
 model = genai.GenerativeModel("gemini-1.5-flash")
 
-#BaseModels
+# Pydantic Models
 class ConfigURL(BaseModel):
     configuration: str
     userEmail: Optional[str] = None
@@ -47,13 +46,12 @@ class FormatReq(BaseModel):
     raw_data: dict | list | str
     org_msg: str
 
-#RAG
-embedding_model = SentenceTransformer("paraphrase-MiniLM-L3-v2")
-rag_cache = {}  
+
+rag_cache = {}
 
 async def prepare_rag_data(url: str):
     if url in rag_cache:
-        return 
+        return
 
     try:
         async with httpx.AsyncClient() as client:
@@ -65,17 +63,32 @@ async def prepare_rag_data(url: str):
 
         full_text = soup.get_text(separator=" ", strip=True)
         words = full_text.split()
-        chunks = [' '.join(words[i:i+50]) for i in range(0, len(words), 50)]
+        chunks = [' '.join(words[i:i + 50]) for i in range(0, len(words), 50)]
 
-        embeddings = embedding_model.encode(chunks,convert_to_tensor=True)
-        rag_cache[url]=(embeddings,chunks)
-        
+        tfidf = TfidfVectorizer().fit(chunks)
+        vectors = tfidf.transform(chunks)
+
+        rag_cache[url] = {
+            "chunks": chunks,
+            "tfidf": tfidf,
+            "vectors": vectors
+        }
 
     except Exception as e:
         logger.error(f"Failed to prepare RAG for {url}: {e}")
-        rag_cache[url] = (None, [])
+        rag_cache[url] = None
 
-#to check if user wants info about site
+def retrieve_relevant_chunks(url: str, query: str, top_k: int = 3):
+    data = rag_cache.get(url)
+    if not data:
+        return []
+
+    query_vec = data["tfidf"].transform([query])
+    scores = cosine_similarity(query_vec, data["vectors"]).flatten()
+    top_indices = scores.argsort()[-top_k:][::-1]
+    return [data["chunks"][i] for i in top_indices]
+
+# Check if message is site-related
 async def is_site_related(message: str) -> bool:
     prompt = f"""
 You're a helper AI. The user typed: "{message}"
@@ -90,23 +103,8 @@ Reply only with "yes" or "no".
         logger.warning(f"Site-related check failed: {e}")
         return False
 
-#to retrieve top matching chunk from the site info
-def retrieve_relevant_chunks(url: str, query: str, top_k: int = 1):
-    if url not in rag_cache:
-        return []
-    embeddings, chunks = rag_cache[url]
-    if embeddings is None or not isinstance(chunks, list) or not chunks:
-        return []
-
-    query_embed = embedding_model.encode(query,convert_to_tensor=True)
-    cosine_scores=util.cos_sim(query_embed,embeddings)[0]
-    top_results=cosine_scores.topk(k=top_k)
-
-    return [chunks[i] for i in top_results.indices]
-
-#AI
+# Gemini AI Handler
 class GeminiAI:
-
     async def generate_content(self, prompt: str) -> str:
         try:
             response = await model.generate_content_async(prompt)
@@ -162,7 +160,6 @@ USER EMAIL: "{email if email else 'Not provided'}"
         return await self.generate_content(prompt)
 
 
-# ---- Main Chat Handler ----
 class AIChatBot:
     def __init__(self):
         self.ai = GeminiAI()
@@ -203,7 +200,7 @@ class AIChatBot:
             logger.error(f"Error in handle_message: {str(e)}")
             return {"response": "Something went wrong while processing your request."}
 
-# ---- FastAPI Routes ----
+
 chatbot = AIChatBot()
 
 @app.post("/chat")
@@ -227,10 +224,7 @@ Format this clearly using commas, DON'T use *, or emails in response.
     return {"response": response.text}
 
 
-
 if __name__ == "__main__":
-    import os
     import uvicorn
-
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
