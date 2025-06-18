@@ -49,7 +49,7 @@ class FormatReq(BaseModel):
     org_msg: str
 
 #RAG
-embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+embedding_model = SentenceTransformer("paraphrase-MiniLM-L3-v2")
 rag_cache = {}  # key: url, value: (faiss_index, chunk_texts)
 
 async def prepare_rag_data(url: str):
