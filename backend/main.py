@@ -95,7 +95,7 @@ def retrieve_relevant_chunks(url: str, query: str, top_k: int = 1):
     if url not in rag_cache:
         return []
     embeddings, chunks = rag_cache[url]
-    if not embeddings or not chunks:
+    if embeddings is None or not isinstance(chunks, list) or not chunks:
         return []
 
     query_embed = embedding_model.encode(query,convert_to_tensor=True)
