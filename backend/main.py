@@ -49,11 +49,11 @@ class FormatReq(BaseModel):
 
 #RAG
 embedding_model = SentenceTransformer("paraphrase-MiniLM-L3-v2")
-rag_cache = {}  # key: url, value: (faiss_index, chunk_texts)
+rag_cache = {}  
 
 async def prepare_rag_data(url: str):
     if url in rag_cache:
-        return  # already cached
+        return 
 
     try:
         async with httpx.AsyncClient() as client:
@@ -225,3 +225,12 @@ Format this clearly using commas, DON'T use *, or emails in response.
 """
     response = model.generate_content(prompt)
     return {"response": response.text}
+
+
+
+if __name__ == "__main__":
+    import os
+    import uvicorn
+
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
