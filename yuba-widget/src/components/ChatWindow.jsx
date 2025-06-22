@@ -7,7 +7,6 @@ const ChatWindow = ({ closeChat,userEmail,configuration }) => {
     const [message, setMessage] = useState('');
     const [history, setHistory] = useState([]);
     const chatEndRef = useRef(null); //scroll eff
-
     const [isListening, setIsListening] = useState(false);
 
 const startListening = () => {
@@ -45,9 +44,7 @@ const startListening = () => {
 
   recognition.start();
 };
-
-
-     useEffect(()=>{
+    useEffect(()=>{
         chatEndRef.current?.scrollIntoView({behavior:"smooth"}); //for automatic scrolling to recent when new messages come
      },[history]);
     
@@ -85,30 +82,24 @@ const handleSend = async () => {
 });
 
         setHistory(prev => prev.filter(msg => !msg.temp)); 
-
-        
         if (response.data?.callback && window.chatbotCallback) {
             const { action, payload } = response.data.callback;
             try {
                 const result = await window.chatbotCallback(action, payload);
-
-                
                 const formattingResponse = await axios.post(`${import.meta.env.VITE_BACKEND}/format`, {
                     raw_data: result,
                     org_msg: message,
                 },
             {
-  withCredentials: true 
-});
-
+            withCredentials: true 
+          });
                 const formatted = formattingResponse.data.response || formattingResponse.data;
 
                 setHistory(prev => [...prev, {
                     text: typeof formatted === "string" ? formatted : JSON.stringify(formatted, null, 2),
                     sender: 'bot'
                 }]);
-
-                return;
+              return;
             } catch (callbackErr) {
                 console.error("Callback error:", callbackErr);
                 setHistory(prev => [...prev, {
@@ -118,9 +109,6 @@ const handleSend = async () => {
                 return;
             }
         }
-
-        
-       
 let botText = '';
 
 if (response.data?.callback) {
@@ -155,11 +143,7 @@ if (response.data?.callback) {
         }]);
     }
 };
-
-
-
-    
-    return (
+return (
         <div className="window">
             <div className="header">
                 <h2>Yuba</h2>
@@ -197,5 +181,4 @@ if (response.data?.callback) {
         </div>
     );
 }
-
 export default ChatWindow;

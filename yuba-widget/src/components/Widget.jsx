@@ -4,16 +4,12 @@ import './widget.css';
 
 const Widget=(configuration,userEmail)=>{
     const[open,setopen]=useState(false);
-    
     const handleClick=()=>{
         setopen(prev => !prev); //toggle
-        
     }
-    
     const closeChat=()=>{
         setopen(false);
     }
-
     return (
         <>
             <div className="icon">
@@ -21,21 +17,7 @@ const Widget=(configuration,userEmail)=>{
             </div>
 
             {open && <ChatWindow closeChat={closeChat} userEmail={userEmail} configuration={configuration}/>}
-
-        
-        
-        
-        
-        
-        
-        
-        
-        
         </>
-
-
-
-
     );
 }
 export default Widget;
